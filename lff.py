@@ -1,5 +1,16 @@
-# pip install astropy matplotlib scipy
-# 
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+################################################################################
+#
+# Low frequency filling for optical/long baseine interferometry
+# Author: fmillour
+# Date: 08/03/2025
+# inspired from LFF module of fitomatic
+# pip install astropy matplotlib
+#
+################################################################################
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
@@ -14,19 +25,20 @@ rad2as = 206265
 #filename = 'OiXP_l_Pup_MATISSE_A0-B2-C1-D0_2020-02-16_L.fits'
     
 dir = '/Users/fmillour/Documents/ARTICLES/HD62623_3/Re_LFF_l_Pup/'
-filename = 'l_Pup_newNband_MATISSE_IR-N_LOW_noChop_cal_merged_oifits_0.fits'
-#filename = 'l_Pup_newLband_MATISSE_IR-LM_LOW_noChop_cal_merged_oifits_0.fits'
-#filename = 'l_Pup_newMband_MATISSE_IR-LM_LOW_noChop_cal_merged_oifits_0.fits'
+filename = ['l_Pup_newLband_MATISSE_IR-LM_LOW_noChop_cal_merged_oifits_0.fits',
+            'l_Pup_newMband_MATISSE_IR-LM_LOW_noChop_cal_merged_oifits_0.fits',
+            'l_Pup_newNband_MATISSE_IR-N_LOW_noChop_cal_merged_oifits_0.fits'
+            ]
 
+'''
 dir = '/Users/fmillour/Documents/ARTICLES/pigru/RE_Data_piGru/'
-
 filename = ['continuum_4.0325-4.0368.fits',
             'OH21_4.1088-4.1146.fits',
             'SiO31_4.0433-4.0526.fits',
             'SiO31_4.0661-4.0738.fits',
             'SiO42_4.0836-4.0931.fits',
             'SiO53_4.1249-4.1383.fits']
-
+'''
 
 ######################################################
 # LFF parameters
@@ -37,8 +49,8 @@ fracMinFreq = 0.95 # Fraction of the minimum frequency to generate the (u,v) poi
 #uvtype      = 'spiral'
 uvtype      = 'rspiral'
 #uvtype      = 'random'
-rdamp = 0.05
-nturns=np.sqrt(num_points)
+rdamp       = 0.1
+nturns      = np.sqrt(num_points)
 
 
 ######################################################
@@ -171,7 +183,7 @@ def main():
                 sigma_fits.append(popt[0])
                 plot_gaussian_fit(freq_wl, vis2_wl, vis2e_wl, popt, wl, colors, unique_wavelengths)
 
-        else:
+        elif csym == 2:
             # 2D Gaussian fit
             sigma_x_fits = []
             sigma_y_fits = []
