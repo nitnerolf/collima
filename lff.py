@@ -19,16 +19,20 @@ from datetime import datetime
 
 rad2as = 206265
 
-#dir = '/Users/fmillour/Documents/ARTICLES/HD62623_3/lpup_LMdata_cal_Chop_2020&2024/'
-#filename = 'OiXP_l_Pup_MATISSE_A0-B2-C1-D0_2020-02-16_L.fits'
-#filename = 'OiXP_l_Pup_MATISSE_A0-B2-C1-D0_2020-02-16_M.fits'
-#filename = 'OiXP_l_Pup_MATISSE_A0-B2-C1-D0_2020-02-16_L.fits'
+'''
+dir = '/Users/fmillour/Documents/ARTICLES/HD62623_3/lpup_LMdata_cal_Chop_2020&2024/'
+filename = 'OiXP_l_Pup_MATISSE_A0-B2-C1-D0_2020-02-16_L.fits'
+filename = 'OiXP_l_Pup_MATISSE_A0-B2-C1-D0_2020-02-16_M.fits'
+filename = 'OiXP_l_Pup_MATISSE_A0-B2-C1-D0_2020-02-16_L.fits'
+'''
     
+
 dir = '/Users/fmillour/Documents/ARTICLES/HD62623_3/Re_LFF_l_Pup/'
 filename = ['l_Pup_newLband_MATISSE_IR-LM_LOW_noChop_cal_merged_oifits_0.fits',
             'l_Pup_newMband_MATISSE_IR-LM_LOW_noChop_cal_merged_oifits_0.fits',
             'l_Pup_newNband_MATISSE_IR-N_LOW_noChop_cal_merged_oifits_0.fits'
             ]
+
 
 '''
 dir = '/Users/fmillour/Documents/ARTICLES/pigru/RE_Data_piGru/'
@@ -40,12 +44,21 @@ filename = ['continuum_4.0325-4.0368.fits',
             'SiO53_4.1249-4.1383.fits']
 '''
 
+'''
+dir = '/Users/fmillour/Documents/ARTICLES/pigru/data_piGru_new_new_new_N/'
+filename = ['pi_Gru_10.8-11.0_v2.fits']
+'''
+
 ######################################################
 # LFF parameters
 v2thresh    = 0.3**2 # Threshold for visibility squared to take into account for the LFF fit
+#v2thresh    = 0.5**2 # Threshold for visibility squared to take into account for the LFF fit
+#freqthresh  = 7 # Threshold for frequency to take into account for the LFF fit
+freqthresh  = 0 # Threshold for frequency to take into account for the LFF fit
 csym        = 1 # Fit a 1D Gaussian (csym=1) or a 2D Gaussian (csym=2)
 num_points  = 50 # Number of (u,v) points generated in the LFF file
-fracMinFreq = 0.95 # Fraction of the minimum frequency to generate the (u,v) points
+#fracMinFreq = 0.95 # Fraction of the minimum frequency to generate the (u,v) points
+fracMinFreq = 0.5 # Fraction of the minimum frequency to generate the (u,v) points
 #uvtype      = 'spiral'
 uvtype      = 'rspiral'
 #uvtype      = 'random'
@@ -93,14 +106,16 @@ def find_wavelength_table(hdu, binary_table_names, instru):
 
 ######################################################
 
-def plot_vis2_data(freq, vis2, vis2e, color="blue", label=None):
+def plot_vis2_data(freq, vis2, vis2e, color="black", label=None):
     for ibase in range(vis2.shape[0]):
         plt.errorbar(freq[ibase], vis2[ibase], yerr=vis2e[ibase], color=color, label=label)
 
 ######################################################
 
-def filter_visibilities(OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band, v2thresh):
-    flag = (OIVIS2 - OIVIS2e > v2thresh) & (B < 5 * min(B))
+def filter_visibilities(OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band, v2thresh, freqthresh):
+    if freqthresh is None:
+        freqthresh = max(FREQ)
+    flag = (OIVIS2 - OIVIS2e > v2thresh) & (B < 5 * min(B)) & (FREQ < freqthresh)
     return (arr[flag] for arr in [OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band])
 
 ######################################################
@@ -113,6 +128,13 @@ def sort_visibilities(freqfl, Vis2fl, Vis2fle):
 
 def gaussian_centered(x, sigma, a=1, x0=0):
     return a * np.exp(-(x - x0)**2 / (2 * (sigma+(sigma==0))**2))
+
+######################################################
+
+def gaussSizeFromV2(v2, freq):
+    sig = np.sqrt(-0.5 * freq**2 / np.log(v2))
+    fwhm = 2 * np.sqrt(2 * np.log(2)) * sig
+    return fwhm
 
 ######################################################
 
@@ -142,21 +164,30 @@ def plot_gaussian_2d_fit(freq_wl, vis2_wl, vis2e_wl, popt, wl, colors, unique_wa
 
 def main():
     for ifile in filename:
+        global freqthresh
         hdu, binary_table_names = load_fits_data(dir, ifile)
         OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band, Bid, count, dist_sign = extract_vis2_data(hdu, binary_table_names)
         print(f'Data file containss {count} visibilities')
         
         plt.figure(figsize=(12, 9))
+        plt.plot(FREQ, gaussSizeFromV2(OIVIS2, FREQ), color="red", marker='*', linestyle='')
+        
+        plt.figure(figsize=(12, 9))
         plot_vis2_data(FREQ, OIVIS2, OIVIS2e)
+        
+        if freqthresh == 0:
+            freqthresh = max(FREQ)
 
-        Vis2fl, Vis2fle, freqfl, Ufl, Vfl, Bfl, wlenfl, bandfl = filter_visibilities(OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band, v2thresh)
+        Vis2fl, Vis2fle, freqfl, Ufl, Vfl, Bfl, wlenfl, bandfl = filter_visibilities(OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band, v2thresh, freqthresh)
         unique_wavelengths, index = np.unique(wlenfl, return_index=True)
         unique_band = bandfl[index]
         freqfl_sorted, Vis2fl_sorted, Vis2fle_sorted = sort_visibilities(freqfl, Vis2fl, Vis2fle)
         
         print(f'Data file contains {len(unique_wavelengths)} lambda')
 
+        
         plt.axhline(y=v2thresh, color="red", linestyle=':')
+        plt.axvline(x=freqthresh, color="black", linestyle=':')
         colors = plt.cm.rainbow(np.linspace(0, 1, len(unique_wavelengths)))
         for i, wl in enumerate(unique_wavelengths):
             mask = wlenfl == wl
@@ -173,6 +204,7 @@ def main():
         #plt.savefig(output_filename)
         #plt.show()
 
+        
 
         if csym == 1:
             sigma_fits = []
