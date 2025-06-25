@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from astropy.io import fits
 from datetime import datetime
+from scipy.special import j1
 
 rad2as = 206265
 
@@ -126,8 +127,28 @@ def sort_visibilities(freqfl, Vis2fl, Vis2fle):
 
 ######################################################
 
-def gaussian_centered(x, sigma, a=1, x0=0):
+def gaussian_centered(x, size, type='fwhm', a=1, x0=0):
+    if type == 'sigma':
+        sigma = size
+    elif type == 'fwhm':
+        sigma = size / (2 * np.sqrt(2 * np.log(2)))  # Convert FWHM to sigma
+    else:
+        raise ValueError("Type must be 'sigma' or 'fwhm'")
     return a * np.exp(-(x - x0)**2 / (2 * (sigma+(sigma==0))**2))
+
+######################################################
+
+def UD_centered(x, diam, V=1, x0=0):
+    # Airy pattern squared (normalized), for a uniform disk:
+    # V(x) = 2 * J1(pi * diam * x) / (pi * diam * x)
+    # Here, x is spatial frequency (cycles/arcsec), diam in arcsec
+    # The squared modulus is the visibility squared
+    arg = np.pi * diam * (x - x0)
+    # Avoid division by zero
+    with np.errstate(divide='ignore', invalid='ignore'):
+        airy = 2 * j1(arg) / (arg + (arg == 0))
+        airy[arg == 0] = 1.0  # lim x->0 of 2*J1(x)/x = 1
+    return V**2 * (airy ** 2)
 
 ######################################################
 
@@ -135,6 +156,19 @@ def gaussSizeFromV2(v2, freq):
     sig = np.sqrt(-0.5 * freq**2 / np.log(v2))
     fwhm = 2 * np.sqrt(2 * np.log(2)) * sig
     return fwhm
+
+######################################################
+
+def UD_sizeFromV2(v2, freq):
+    """
+    Calculate the uniform disk size from visibility squared.
+    :param v2: Visibility squared
+    :param freq: Frequency
+    :return: Uniform disk size
+    """
+    if np.any(v2 <= 0):
+        raise ValueError("Visibility squared must be positive.")
+    return 2 * np.pi * np.sqrt(-np.log(v2)) / freq
 
 ######################################################
 
