@@ -6,66 +6,44 @@
 # Low frequency filling for optical/long baseine interferometry
 # Author: fmillour
 # Date: 08/03/2025
-# inspired from LFF module of fitomatic
-# pip install astropy matplotlib
+# inspired from LFF module of fitomatic 
+# necessary packages: pip install numpy scipy astropy matplotlib
 #
 ################################################################################
 
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.special import j1
 from scipy.optimize import curve_fit
 from astropy.io import fits
 from datetime import datetime
-from scipy.special import j1
+from os.path import expanduser
 
 rad2as = 206265
 
-'''
-dir = '/Users/fmillour/Documents/ARTICLES/HD62623_3/lpup_LMdata_cal_Chop_2020&2024/'
-filename = 'OiXP_l_Pup_MATISSE_A0-B2-C1-D0_2020-02-16_L.fits'
-filename = 'OiXP_l_Pup_MATISSE_A0-B2-C1-D0_2020-02-16_M.fits'
-filename = 'OiXP_l_Pup_MATISSE_A0-B2-C1-D0_2020-02-16_L.fits'
-'''
-    
+articlesdir = expanduser('~/driveFlorentin/ARTICLES/AMOI/')
 
-dir = '/Users/fmillour/Documents/ARTICLES/HD62623_3/Re_LFF_l_Pup/'
-filename = ['l_Pup_newLband_MATISSE_IR-LM_LOW_noChop_cal_merged_oifits_0.fits',
-            'l_Pup_newMband_MATISSE_IR-LM_LOW_noChop_cal_merged_oifits_0.fits',
-            'l_Pup_newNband_MATISSE_IR-N_LOW_noChop_cal_merged_oifits_0.fits'
+dir = articlesdir + '/NF_HD62623_3/round3_l_Pup/LFF2/'
+filename = ['l_Pup_2020_Lband_MATISSE_IR-LM_LOW_noChop_cal_merged_oifits_0.fits',
+            'l_Pup_2020_Mband_MATISSE_IR-LM_LOW_noChop_cal_merged_oifits_0.fits',
+            'l_Pup_2020_Nband_MATISSE_IR-N_LOW_noChop_cal_merged_oifits_0.fits',
+            'l_Pup_2018_Lband_MATISSE_IR-LM_LOW_noChop_cal_merged_oifits_0.fits',
+            'l_Pup_2018_Nband_MATISSE_IR-N_LOW_noChop_cal_merged_oifits_0.fits'
             ]
-
-
-'''
-dir = '/Users/fmillour/Documents/ARTICLES/pigru/RE_Data_piGru/'
-filename = ['continuum_4.0325-4.0368.fits',
-            'OH21_4.1088-4.1146.fits',
-            'SiO31_4.0433-4.0526.fits',
-            'SiO31_4.0661-4.0738.fits',
-            'SiO42_4.0836-4.0931.fits',
-            'SiO53_4.1249-4.1383.fits']
-'''
-
-'''
-dir = '/Users/fmillour/Documents/ARTICLES/pigru/data_piGru_new_new_new_N/'
-filename = ['pi_Gru_10.8-11.0_v2.fits']
-'''
 
 ######################################################
 # LFF parameters
 v2thresh    = 0.3**2 # Threshold for visibility squared to take into account for the LFF fit
-#v2thresh    = 0.5**2 # Threshold for visibility squared to take into account for the LFF fit
-#freqthresh  = 7 # Threshold for frequency to take into account for the LFF fit
 freqthresh  = 0 # Threshold for frequency to take into account for the LFF fit
 csym        = 1 # Fit a 1D Gaussian (csym=1) or a 2D Gaussian (csym=2)
-num_points  = 50 # Number of (u,v) points generated in the LFF file
-#fracMinFreq = 0.95 # Fraction of the minimum frequency to generate the (u,v) points
-fracMinFreq = 0.5 # Fraction of the minimum frequency to generate the (u,v) points
+num_points  = 40 # Number of (u,v) points generated in the LFF file
+fracMinFreq = 0.7 # Fraction of the minimum frequency to generate the (u,v) points
 #uvtype      = 'spiral'
-uvtype      = 'rspiral'
+#uvtype      = 'rspiral'
 #uvtype      = 'random'
+uvtype      = 'random2'
 rdamp       = 0.1
 nturns      = np.sqrt(num_points)
-
 
 ######################################################
 # Load data from fits file
@@ -94,6 +72,8 @@ def extract_vis2_data(hdu, binary_table_names):
                 wlen, band = np.append(wlen, Wavelength), np.append(band, Bandwidth)
                 OIVIS2, OIVIS2e = np.append(OIVIS2, vis2[i,:]), np.append(OIVIS2e, vis2e[i,:])
                 FREQ, U, V, B, Bid = (np.append(arr, np.ones(Wavelength.shape[0])*val) for arr, val in zip([FREQ, U, V, B, Bid], [freq[i,:], u[i], v[i], b[i], count]))
+    print('Total number of baselines',count)
+    #print('bid', Bid)
     return OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band, Bid, count, dist_sign
 
 ######################################################
@@ -107,23 +87,16 @@ def find_wavelength_table(hdu, binary_table_names, instru):
 
 ######################################################
 
-def plot_vis2_data(freq, vis2, vis2e, color="black", label=None):
-    for ibase in range(vis2.shape[0]):
-        plt.errorbar(freq[ibase], vis2[ibase], yerr=vis2e[ibase], color=color, label=label)
-
-######################################################
-
-def filter_visibilities(OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band, v2thresh, freqthresh):
+def filter_visibilities(OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band, Bid, v2thresh, freqthresh):
     if freqthresh is None:
         freqthresh = max(FREQ)
     flag = (OIVIS2 - OIVIS2e > v2thresh) & (B < 5 * min(B)) & (FREQ < freqthresh)
+    # Enforce the full baseline wavelength range to be true
+    uniqueId = np.unique(Bid)
+    for ib in uniqueId:
+        if not np.all((OIVIS2[Bid==ib] - OIVIS2e[Bid==ib] > v2thresh)) or not np.all(B[Bid==ib] < 5 * min(B)) or not np.all(FREQ[Bid==ib] < freqthresh):
+            flag[Bid == ib] = False
     return (arr[flag] for arr in [OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band])
-
-######################################################
-
-def sort_visibilities(freqfl, Vis2fl, Vis2fle):
-    sorted_indices = np.argsort(freqfl)
-    return (arr[sorted_indices] for arr in [freqfl, Vis2fl, Vis2fle])
 
 ######################################################
 
@@ -170,13 +143,6 @@ def UD_sizeFromV2(v2, freq):
         raise ValueError("Visibility squared must be positive.")
     return 2 * np.pi * np.sqrt(-np.log(v2)) / freq
 
-######################################################
-
-def plot_gaussian_fit(freq_wl, vis2_wl, vis2e_wl, popt, wl, colors, unique_wavelengths):
-    x_fit = np.linspace(0, max(freq_wl), 1000)
-    y_fit = gaussian_centered(x_fit, *popt)
-    plt.plot(x_fit, y_fit, linestyle='--', label=f'Fit for wl={wl:.2e}', color=colors[np.where(unique_wavelengths == wl)[0][0]])
-    plt.legend()
 
 ######################################################
 
@@ -186,13 +152,6 @@ def gaussian_2d(xy, sigma_x, sigma_y, theta):
     y_rot = -x * np.sin(theta) + y * np.cos(theta)
     return np.exp(-((x_rot)**2 / (2 * sigma_x**2) + (y_rot)**2 / (2 * sigma_y**2)))
 
-######################################################
-
-def plot_gaussian_2d_fit(freq_wl, vis2_wl, vis2e_wl, popt, wl, colors, unique_wavelengths):
-    x_fit = np.linspace(0, max(freq_wl), 1000)
-    y_fit = gaussian_centered(x_fit, *popt)
-    plt.plot(x_fit, y_fit, linestyle='--', label=f'Fit for wl={wl:.2e}', color=colors[np.where(unique_wavelengths == wl)[0][0]])
-    plt.legend()
 
 ######################################################
 
@@ -201,53 +160,79 @@ def main():
         global freqthresh
         hdu, binary_table_names = load_fits_data(dir, ifile)
         OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band, Bid, count, dist_sign = extract_vis2_data(hdu, binary_table_names)
-        print(f'Data file containss {count} visibilities')
-        
-        plt.figure(figsize=(12, 9))
-        plt.plot(FREQ, gaussSizeFromV2(OIVIS2, FREQ), color="red", marker='*', linestyle='')
-        
-        plt.figure(figsize=(12, 9))
-        plot_vis2_data(FREQ, OIVIS2, OIVIS2e)
+        print(f'Data file contains {count} visibilities')
+        fig, axs = plt.subplots(2, 2, figsize=(18, 7))
+        axs = axs.flatten()
+
+        # Left plot: gaussSizeFromV2
+        axs[1].plot(FREQ, gaussSizeFromV2(OIVIS2, FREQ), color="red", marker='*', linestyle='')
+        axs[1].set_title('Gaussian Size from V2')
+        axs[1].set_xlabel('Frequency')
+        axs[1].set_ylabel('FWHM')
+
+        # Right plot: plot_vis2_data
+        for ibase in range(OIVIS2.shape[0]):
+            axs[0].errorbar(FREQ[ibase], OIVIS2[ibase], yerr=OIVIS2e[ibase], color="black")
+        axs[0].set_title('V2 Data')
+        axs[0].set_xlabel('Frequency')
+        axs[0].set_ylabel('V2')
+
+        # Right plot: plot_vis2_data
+        for ibase in range(OIVIS2.shape[0]):
+            axs[2].errorbar(FREQ[ibase], OIVIS2[ibase], yerr=OIVIS2e[ibase], color="black")
+        axs[2].set_title('V2 Data')
+        axs[2].set_xlabel('Frequency')
+        axs[2].set_ylabel('V2')
+
+        plt.tight_layout()
         
         if freqthresh == 0:
             freqthresh = max(FREQ)
 
-        Vis2fl, Vis2fle, freqfl, Ufl, Vfl, Bfl, wlenfl, bandfl = filter_visibilities(OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band, v2thresh, freqthresh)
+        Vis2fl, Vis2fle, freqfl, Ufl, Vfl, Bfl, wlenfl, bandfl = filter_visibilities(OIVIS2, OIVIS2e, FREQ, U, V, B, wlen, band, Bid, v2thresh, freqthresh)
         unique_wavelengths, index = np.unique(wlenfl, return_index=True)
         unique_band = bandfl[index]
-        freqfl_sorted, Vis2fl_sorted, Vis2fle_sorted = sort_visibilities(freqfl, Vis2fl, Vis2fle)
+        freqfl_sorted, Vis2fl_sorted, Vis2fle_sorted = freqfl, Vis2fl, Vis2fle
         
         print(f'Data file contains {len(unique_wavelengths)} lambda')
 
         
-        plt.axhline(y=v2thresh, color="red", linestyle=':')
-        plt.axvline(x=freqthresh, color="black", linestyle=':')
+        axs[0].axhline(y=v2thresh, color="red", linestyle=':')
+        axs[0].axvline(x=freqthresh, color="black", linestyle=':')
+        axs[2].axhline(y=v2thresh, color="red", linestyle=':')
+        axs[2].axvline(x=freqthresh, color="black", linestyle=':')
         colors = plt.cm.rainbow(np.linspace(0, 1, len(unique_wavelengths)))
         for i, wl in enumerate(unique_wavelengths):
             mask = wlenfl == wl
-            plt.errorbar(freqfl_sorted[mask], Vis2fl_sorted[mask], yerr=Vis2fle_sorted[mask], color=colors[i], label=f'wl={wl:.2e}')
+            axs[0].errorbar(freqfl_sorted[mask], Vis2fl_sorted[mask], yerr=Vis2fle_sorted[mask], color=colors[i], label=f'wl={wl:.2e}', linestyle='')
+            axs[2].errorbar(freqfl_sorted[mask], Vis2fl_sorted[mask], yerr=Vis2fle_sorted[mask], color=colors[i], label=f'wl={wl:.2e}', linestyle='')
         plt.legend()
         
         plt.xlabel(r'$B / \lambda$ (cycles/arcsec)')
         plt.ylabel(r'$V^2$')
         plt.title(r'$V^2$ vs $B / \lambda$')
-        plt.yscale('log')
-        plt.xlim(0, 3*max(freqfl_sorted))
-        plt.ylim(v2thresh/1000, 1.1)
-        #output_filename = filename.replace('.fits', '_v2_fit1D.png')
-        #plt.savefig(output_filename)
-        #plt.show()
-
-        
+        axs[2].set_yscale('log')
+        axs[0].set_xlim(0, 3*max(freqfl_sorted))
+        axs[0].set_ylim(-0.1, 1.1)
+        axs[2].set_xlim(0, 3*max(freqfl_sorted))
+        axs[2].set_ylim(v2thresh/10, 1.1)
 
         if csym == 1:
-            sigma_fits = []
+            size_fits = []
             for wl in unique_wavelengths:
                 mask = wlenfl == wl
                 freq_wl, vis2_wl, vis2e_wl = freqfl_sorted[mask], Vis2fl_sorted[mask], Vis2fle_sorted[mask]
                 popt, _ = curve_fit(gaussian_centered, freq_wl, vis2_wl, sigma=vis2e_wl, p0=[np.std(freq_wl)])
-                sigma_fits.append(popt[0])
-                plot_gaussian_fit(freq_wl, vis2_wl, vis2e_wl, popt, wl, colors, unique_wavelengths)
+                if popt[0] < 0.1:
+                    print(f"Warning: Negative fwhm fit for wavelength {wl:.2e}, setting to previous wavelength value.")
+                    popt[0] = size_fits[-1]
+                size_fits.append(np.abs(popt[0]))
+                x_fit = np.linspace(0, max(freq_wl), 1000)
+                y_fit = gaussian_centered(x_fit, *popt)
+                axs[0].plot(x_fit, y_fit, linestyle='--', label=f'Fit for wl={wl:.2e}', color=colors[np.where(unique_wavelengths == wl)[0][0]])
+                axs[2].plot(x_fit, y_fit, linestyle='--', label=f'Fit for wl={wl:.2e}', color=colors[np.where(unique_wavelengths == wl)[0][0]])
+                
+            axs[3].plot(unique_wavelengths*1e6, np.array(size_fits) * 2.35, marker='o', linestyle='-', color='blue')
 
         elif csym == 2:
             # 2D Gaussian fit
@@ -278,6 +263,7 @@ def main():
             print(f"Fit parameters for 2D Gaussian (sigma_x, sigma_y, theta) for each wavelength: {list(zip(sigma_x_fits, sigma_y_fits, theta_fits))}")
             print(f"Reduced chi-squared for 2D fit for each wavelength: {reduced_chi2s_2d}")
 
+
         # Generate new visibilities from the fit parameters
         max_radius = min(freqfl_sorted) * rad2as * min(unique_wavelengths) * fracMinFreq
         
@@ -293,6 +279,14 @@ def main():
                 V_new.append(v)
             U_new = np.array(U_new)
             V_new = np.array(V_new)
+        if uvtype=='random2':
+            U_new = np.random.uniform(-max_radius, max_radius, num_points)
+            V_new = np.random.uniform(-max_radius, max_radius, num_points)
+            while np.any(np.sqrt(U_new**2 + V_new**2) > max_radius):
+                test = np.sqrt(U_new**2 + V_new**2) > max_radius
+                numi = np.sum(test)
+                U_new[test] = np.random.uniform(-max_radius, max_radius, numi)
+                V_new[test] = np.random.uniform(-max_radius, max_radius, numi)
         if uvtype=='spiral':
             r = np.linspace(0.1, max_radius, num_points)
             theta = np.linspace(0, nturns * 2*np.pi, num_points)
@@ -304,7 +298,6 @@ def main():
             U_new = r * np.cos(theta)
             V_new = r * np.sin(theta)
 
-        #print(dist_sign)
         wlen_new = unique_wavelengths[::int(dist_sign)]
         band_new = unique_band[::int(dist_sign)]
 
@@ -315,10 +308,11 @@ def main():
             new_B.append(B_new)
             freq = B_new / wl / rad2as
             if csym == 1:
-                new_vis = gaussian_centered(freq, sigma_fits[iwl])
+                new_vis = gaussian_centered(freq, size_fits[iwl])
             else:
                 xy = np.vstack((U_new, V_new)) / wl / rad2as
                 new_vis = gaussian_2d(xy, sigma_x_fits[iwl], sigma_y_fits[iwl], theta_fits[iwl])
+                
             new_visibilities.append(new_vis)
         new_visibilities = np.array(new_visibilities).T
         new_B = np.array(new_B).T
@@ -327,8 +321,10 @@ def main():
 
         for ibase in range(new_visibilities.shape[0]):
             new_freq = new_B[ibase,:] / wlen_new / rad2as
-            plt.plot(new_freq, new_visibilities[ibase,:], color="black")
-            plt.errorbar(new_freq, new_visibilities[ibase,:], yerr=new_vis2err[ibase,:], color="black")
+            axs[0].plot(new_freq, new_visibilities[ibase,:], color="black")
+            axs[0].errorbar(new_freq, new_visibilities[ibase,:], yerr=new_vis2err[ibase,:], color="black")
+            axs[2].plot(new_freq, new_visibilities[ibase,:], color="black")
+            axs[2].errorbar(new_freq, new_visibilities[ibase,:], yerr=new_vis2err[ibase,:], color="black")
 
         nwl = wlen_new.shape[0]
         new_hdu = fits.BinTableHDU.from_columns([
@@ -348,15 +344,8 @@ def main():
         new_hdu.header['OI_REVN']  = 1
         new_hdu.header['DATE-OBS'] = datetime.now().strftime('%Y-%m-%d')
         new_hdu.data['STA_INDEX'][:,1] = 1
-        
-        #print('hdu', hdu)
-        #print('hdu vis2', hdu['OI_VIS2'].data['VIS2DATA'])
-        #print('new_hdu', new_hdu)
-        
 
         new_hdul = fits.HDUList([fits.PrimaryHDU(), new_hdu])
-        #print('new_hdul', new_hdul)
-        
 
         wavelength_hdu = fits.BinTableHDU.from_columns([
             fits.Column(name='EFF_WAVE', format='E', array=wlen_new),
@@ -370,7 +359,6 @@ def main():
         
         hdu.append(wavelength_hdu)
         hdu.append(new_hdu)
-        #print('hdu vis2', hdu[-1].data['VIS2DATA'])
 
         for hdi in hdu:
             if 'EXTNAME' in hdi.header and hdi.header['EXTNAME'] == 'OI_ARRAY':
@@ -392,7 +380,6 @@ def main():
             output_filename = ifile.replace('.fits', '_v2_fit2D.png')
             
         new_hdul.writeto(dir + new_filename, overwrite=True)
-        #hdu.writeto(dir + new_filename2, overwrite=True)
 
         plt.savefig(dir + output_filename)
         plt.show()
